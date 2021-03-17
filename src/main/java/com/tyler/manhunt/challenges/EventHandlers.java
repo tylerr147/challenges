@@ -1,40 +1,110 @@
 package com.tyler.manhunt.challenges;
 
+import com.tyler.manhunt.challenges.util.CompassUtil;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.item.Item;
+import net.minecraft.entity.player.ServerPlayerEntity;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
-import net.minecraft.nbt.CompoundNBT;
-import net.minecraft.nbt.NBTDynamicOps;
-import net.minecraft.nbt.NBTUtil;
-import net.minecraft.util.RegistryKey;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.potion.EffectInstance;
+import net.minecraft.potion.Effects;
+import net.minecraft.util.DamageSource;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.living.LivingHurtEvent;
 import net.minecraftforge.event.entity.player.PlayerEvent;
-import net.minecraftforge.event.entity.player.PlayerInteractEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 
+import com.tyler.manhunt.challenges.Challenges.Status.Label;
+
 import java.util.Objects;
+
 
 public class EventHandlers {
 	static class ServerTickHandler {
 		@SubscribeEvent
 		public void onServerTick(TickEvent.ServerTickEvent event) {
-			//System.out.println("Ticking server");
+			//nothing needed in here
 		}
 	}
 	static class PlayerTickHandler {
 		@SubscribeEvent
 		public void onPlayerTick(TickEvent.PlayerTickEvent event) {
-			PlayerEntity player = event.player;
+			ServerPlayerEntity player = (ServerPlayerEntity) event.player;
+			ServerPlayerEntity speedrunner =
+					Objects.requireNonNull(
+							player.getServer())
+							.getPlayerList()
+							.getPlayerByUsername(Manhunt.speedrunner);
 			
-			if (Challenges.Status.noFallDamage
-			&& Manhunt.speedrunner == player.getUniqueID()) {
-				player.fallDistance = 0;
+			boolean isRunner = Objects.equals(Manhunt.speedrunner, player.getDisplayName().getString());
+			boolean isHunter = Manhunt.hunters.contains(player.getDisplayName().getString());
+			
+			if (speedrunner == null && Manhunt.hunters.isEmpty()) return;
+			if (!isRunner && !isHunter) return;
+			
+			//handle speedrunner modifiers
+			if (isRunner) {
+				//remove fall damage from runner while still allowing crits to occur
+				if (Challenges.getStatus(Label.NO_FALL_DAMAGE)) player.fallDistance = 2;
+				
+				//give invis to runner if crouching
+				if (Challenges.getStatus(Label.CROUCH_INVIS)) {
+					EffectInstance invis = new EffectInstance(Effects.INVISIBILITY, 20, 1, false, false);
+					if (player.isSneaking()) player.addPotionEffect(invis);
+					else player.removePotionEffect(Effects.INVISIBILITY);
+				}
 			}
+			
+			//handle hunter modifiers
+			if (isHunter) {
+				//update tracking compasses
+				CompassUtil.updateCompass(player, speedrunner);
+				
+				//TODO: mechanic needs to be redone
+				//current idea - hunter gets 5 seconds of glowing when runner crouches
+				// then glow goes on 30 second cooldown
+				if (Challenges.getStatus(Label.HUNTERS_GLOW)) {
+					EffectInstance glowing = new EffectInstance(Effects.GLOWING, 20, 1, false, false);
+					if (!player.isSneaking()) player.addPotionEffect(glowing);
+					else player.removePotionEffect(Effects.GLOWING);
+				}
+			}
+			
+			
+			
+			
+			
+		}
+	}
+	static class DamageEventHandler {
+		@SubscribeEvent
+		public void onLivingHurt(LivingHurtEvent event) {
+		if (!(event.getEntityLiving() instanceof  ServerPlayerEntity)) return;
+			ServerPlayerEntity player = (ServerPlayerEntity) event.getEntityLiving();
+			
+			//don't want to mess with damage to anybody but the runner
+			if (!Objects.equals(Manhunt.speedrunner,
+					player.getDisplayName().getString())) return;
+			
+			//only modify fall damage
+			if (event.getSource() == DamageSource.FALL
+			&& Challenges.getStatus(
+					Challenges.Status.Label.FALL_DAMAGE_HEALS)) {
+				
+				//reverse fall damage into healing
+				Challenges.LOGGER.info("Reversing fall damage");
+				float newHealth = player.getHealth() + event.getAmount();
+				Challenges.LOGGER.info("[Health] "
+						+ player.getHealth()
+						+ " + "
+						+ event.getAmount()
+						+ " -> "
+						+ newHealth);
+				event.setAmount(0F);
+				player.setHealth(newHealth);
+			}
+			
 		}
 	}
 	static class RespawnHandler {
@@ -42,50 +112,20 @@ public class EventHandlers {
 		public void playerRespawn(PlayerEvent.PlayerRespawnEvent respawn) {
 			PlayerEntity player = respawn.getPlayer();
 			
-			if (Manhunt.hunters.contains(player.getUniqueID()))
+			if (Manhunt.hunters.contains(player.getDisplayName().getString()))
 				player.inventory.addItemStackToInventory(
 						new ItemStack(Items.COMPASS));
 			
 		}
 	}
-	static class ItemUseHandler {
-		@SubscribeEvent
-		public void onRightClickItem(PlayerInteractEvent.RightClickItem event) {
-			Challenges.LOGGER.info("onRightClickItem called");
-			Item item = event.getItemStack().getItem();
-			ItemStack itemStack = event.getItemStack();
-			PlayerEntity player = event.getPlayer();
-			World world = event.getWorld();
-			
-			if (item != Items.COMPASS) return;
-			
-			PlayerEntity speedrunner = Objects.requireNonNull(
-					world.getServer())
-					.getPlayerList().getPlayerByUUID(
-							Manhunt.speedrunner);
-			assert player != null && speedrunner != null;
-			
-			if (Manhunt.hunters.contains(player.getUniqueID())) {
-				write(speedrunner.world.getDimensionKey(),
-						speedrunner.getPosition(),
-						itemStack.getOrCreateTag());
-			}
-		}
-		
-		private void write(RegistryKey<World> lodestoneDimension, BlockPos lodestonePos, CompoundNBT nbt) {
-			nbt.put("LodestonePos", NBTUtil.writeBlockPos(lodestonePos));
-			World.CODEC.encodeStart(NBTDynamicOps.INSTANCE, lodestoneDimension).resultOrPartial(Challenges.LOGGER::error).ifPresent(
-					(p_234668_1_) -> nbt.put("LodestoneDimension", p_234668_1_)
-			);
-			nbt.putBoolean("LodestoneTracked", true);
-		}
-	}
+	
 	public static void registerEvents() {
 		IEventBus bus = MinecraftForge.EVENT_BUS;
 		//MinecraftForge.EVENT_BUS.register(new ServerTickHandler());
 		bus.register(new PlayerTickHandler());
 		bus.register(new RespawnHandler());
-		bus.register(new ItemUseHandler());
+		bus.register(new DamageEventHandler());
+		//bus.register(new ItemUseHandler());
 	}
 	
 }

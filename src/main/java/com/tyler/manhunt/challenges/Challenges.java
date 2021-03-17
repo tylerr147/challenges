@@ -1,14 +1,14 @@
 package com.tyler.manhunt.challenges;
 
-import com.mojang.brigadier.CommandDispatcher;
-import com.tyler.manhunt.challenges.commands.CommandHunter;
-import com.tyler.manhunt.challenges.commands.CommandSpeedrunner;
-import net.minecraft.block.Block;
-import net.minecraft.block.Blocks;
+import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.context.CommandContext;
+import com.tyler.manhunt.challenges.commands.*;
+import net.minecraft.block.*;
 import net.minecraft.command.CommandSource;
+import net.minecraft.item.Item;
+import net.minecraft.util.text.StringTextComponent;
 import net.minecraftforge.common.MinecraftForge;
-import net.minecraftforge.event.RegisterCommandsEvent;
-import net.minecraftforge.event.RegistryEvent;
+import net.minecraftforge.event.*;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -19,7 +19,9 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-// The value here should match an entry in the META-INF/mods.toml file
+import java.util.ArrayList;
+import java.util.HashMap;
+
 @Mod("challenges")
 public class Challenges {
 	
@@ -27,8 +29,9 @@ public class Challenges {
 	public static final Logger LOGGER = LogManager.getLogger();
 	
 	public Challenges() {
+		Status.initMap();
+		
 		IEventBus eventBus = FMLJavaModLoadingContext.get().getModEventBus();
-		CommandDispatcher<CommandSource> dispatcher = new CommandDispatcher<>();
 		
 		eventBus.addListener(this::setup);
 		eventBus.addListener(this::doClientStuff);
@@ -60,6 +63,7 @@ public class Challenges {
 	{
 		CommandSpeedrunner.register(event.getDispatcher());
 		CommandHunter.register(event.getDispatcher());
+		CommandChallenge.register(event.getDispatcher());
 	}
 	
 	// You can use EventBusSubscriber to automatically subscribe events on the contained class (this is subscribing to the MOD
@@ -67,14 +71,59 @@ public class Challenges {
 	@Mod.EventBusSubscriber(bus = Mod.EventBusSubscriber.Bus.MOD)
 	public static class RegistryEvents {
 		@SubscribeEvent
+		public static void onItemsRegistry(final RegistryEvent.Register<Item> itemRegistryEvent) {
+		
+		}
+		@SubscribeEvent
 		public static void onBlocksRegistry(final RegistryEvent.Register<Block> blockRegistryEvent) {
 			// register a new block here
 			LOGGER.info("HELLO from Register Block");
 		}
 	}
-	static class Status {
-		public static boolean crouchInvis = false;
-		public static boolean fireResistance = false;
-		public static boolean noFallDamage = false;
+	
+	
+	public static boolean getStatus(Status.Label challenge) {
+		return Status.map.get(challenge.name);
+	}
+	
+	public static boolean getStatus(String challenge) {
+		return Status.map.get(challenge);
+	}
+	
+	public static class Status {
+		public enum Label {
+			CROUCH_INVIS("crouchInvis"),
+			FIRE_RESISTANCE("fireResistance"), //TODO: impliment
+			NO_FALL_DAMAGE("noFallDamage"),
+			HUNTERS_GLOW("huntersGlow"), //TODO: rewrite mechanic; 30 second cooldown?
+			CROUCH_NO_TRACKED("crouchNoTracked"), //TODO: test
+			FALL_DAMAGE_HEALS("fallDamageHeals");
+			
+			String name;
+			Label(String name) {
+				this.name = name;
+			}
+		}
+		public final static ArrayList<String> challengeList = new ArrayList<>();
+		
+		public static int setStatus(CommandContext<CommandSource> context) {
+			String input = context.getInput().split(" ")[1];
+			boolean status = BoolArgumentType.getBool(
+					context, "status");
+			
+			map.put(input, status);
+			context.getSource().sendFeedback(new StringTextComponent("Set " + input + " to " + status), true);
+			return 1;
+		}
+		
+		public static HashMap<String, Boolean> map = new HashMap<>();
+		public static void initMap() {
+			for (Label challenge : Label.values())
+				challengeList.add(challenge.name);
+			
+			for (String name : challengeList)
+				map.put(name, false);
+		}
+		
 	}
 }
