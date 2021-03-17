@@ -45,10 +45,13 @@ public class EventHandlers {
 			
 			//handle speedrunner modifiers
 			if (isRunner) {
-				//remove fall damage from runner while still allowing crits to occur
+				//remove fire
+				if (Challenges.getStatus(Label.FIRE_RESISTANCE)) player.forceFireTicks(-20);
+				
+				//remove fall damage without preventing crits
 				if (Challenges.getStatus(Label.NO_FALL_DAMAGE)) player.fallDistance = 2;
 				
-				//give invis to runner if crouching
+				//give invis if crouching
 				if (Challenges.getStatus(Label.CROUCH_INVIS)) {
 					EffectInstance invis = new EffectInstance(Effects.INVISIBILITY, 20, 1, false, false);
 					if (player.isSneaking()) player.addPotionEffect(invis);
@@ -83,27 +86,44 @@ public class EventHandlers {
 		if (!(event.getEntityLiving() instanceof  ServerPlayerEntity)) return;
 			ServerPlayerEntity player = (ServerPlayerEntity) event.getEntityLiving();
 			
-			//don't want to mess with damage to anybody but the runner
-			if (!Objects.equals(Manhunt.speedrunner,
-					player.getDisplayName().getString())) return;
+			boolean isRunner = Objects.equals(Manhunt.speedrunner, player.getDisplayName().getString());
+			boolean isHunter = Manhunt.hunters.contains(player.getDisplayName().getString());
 			
-			//only modify fall damage
-			if (event.getSource() == DamageSource.FALL
-			&& Challenges.getStatus(
-					Challenges.Status.Label.FALL_DAMAGE_HEALS)) {
+			//handle runner damage
+			if (isRunner) {
+				//only modify fall damage
+				if (event.getSource() == DamageSource.FALL) {
+					if (Challenges.getStatus(Challenges.Status.Label.FALL_DAMAGE_HEALS)) {
+						//reverse fall damage into healing
+						Challenges.LOGGER.info("Reversing fall damage");
+						float newHealth = player.getHealth() + event.getAmount();
+						Challenges.LOGGER.info("[Health] "
+								+ player.getHealth()
+								+ " + "
+								+ event.getAmount()
+								+ " -> "
+								+ newHealth);
+						event.setAmount(0F);
+						player.setHealth(newHealth);
+						
+					}
+				}
+				if (event.getSource() == DamageSource.LAVA
+						|| event.getSource() == DamageSource.IN_FIRE) {
+					if (Challenges.getStatus(Label.FIRE_RESISTANCE)) event.setAmount(0);
+				}
 				
-				//reverse fall damage into healing
-				Challenges.LOGGER.info("Reversing fall damage");
-				float newHealth = player.getHealth() + event.getAmount();
-				Challenges.LOGGER.info("[Health] "
-						+ player.getHealth()
-						+ " + "
-						+ event.getAmount()
-						+ " -> "
-						+ newHealth);
-				event.setAmount(0F);
-				player.setHealth(newHealth);
+				
+				
 			}
+			
+			//handle hunter damage
+			if (isHunter) {
+				//nothing in here for now
+				Challenges.LOGGER.info("Doing something to make warning in if (isHunter) in onLivingHurt in EventHandlers");
+			}
+			
+			
 			
 		}
 	}

@@ -93,7 +93,7 @@ public class Challenges {
 	public static class Status {
 		public enum Label {
 			CROUCH_INVIS("crouchInvis"),
-			FIRE_RESISTANCE("fireResistance"), //TODO: impliment
+			FIRE_RESISTANCE("fireResistance"),
 			NO_FALL_DAMAGE("noFallDamage"),
 			HUNTERS_GLOW("huntersGlow"), //TODO: rewrite mechanic; 30 second cooldown?
 			CROUCH_NO_TRACKED("crouchNoTracked"), //TODO: test
